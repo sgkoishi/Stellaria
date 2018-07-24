@@ -26,21 +26,54 @@ namespace Chireiden.Stellaria
 
         public override string Author => "SGKoishi";
         public override string Name => "Stellaria";
-        public override Version Version => new Version(1, 0, 0, 0);
+        public override Version Version => new Version(1, 0, 1, 0);
         public override string Description => "In-game multi world plugin";
 
         public override void Initialize()
         {
+            ReadConfig("tshock\\stellaria.json",
+                new Config
+                {
+                    Servers = new List<Server>
+                    {
+                        new Server
+                        {
+                            Address = "127.0.0.1",
+                            Port = 7776,
+                            SpawnX = 200,
+                            SpawnY = 200
+                        },
+                        new Server
+                        {
+                            Address = "127.0.0.1",
+                            Port = 7778,
+                            SpawnX = 200,
+                            SpawnY = 200
+                        }
+                    },
+                    // The first message sent to server to join.
+                    // Construct:
+                    // Total Length (2 bytes)  15, 0,
+                    // Packet id (1 byte)      1,
+                    // String length (1 byte)  11,
+                    // "Terraria194"           84, 101, 114, 114, 97, 114, 105, 97, 49, 57, 52
+                    JoinBytes = new byte[] {15, 0, 1, 11, 84, 101, 114, 114, 97, 114, 105, 97, 49, 57, 52}
+                }, out config);
             _receiveDataHandler = Hooks.Net.ReceiveData;
             Hooks.Net.ReceiveData = ReceiveData;
             ServerApi.Hooks.ServerLeave.Register(this, args =>
                 _forward[args.Who] = new ForwardPlayer());
-            ReadConfig("tshock\\stellaria.json", new Config(), out config);
             Commands.ChatCommands.Add(new Command("chireiden.stellaria.use", SwitchVerse, "sv"));
         }
 
         private void SwitchVerse(CommandArgs args)
         {
+            if (args.Parameters.Count < 1)
+            {
+                args.Player.SendInfoMessage("Usage: /sv [0-based index]");
+                return;
+            }
+
             var nv = int.Parse(args.Parameters[0]);
             if (_forward[args.TPlayer.whoAmI].Server != nv)
             {
@@ -70,7 +103,11 @@ namespace Chireiden.Stellaria
                 return _receiveDataHandler.Invoke(buffer, ref packetid, ref readoffset, ref start, ref length);
             }
 
-            // TODO: Handle some command (e.g. /lobby) if necessary
+            if (packetid == 25)
+            {
+                // TODO: Handle some command (e.g. /lobby) if necessary
+            }
+
             _forward[buffer.whoAmI].Connection?.Client
                 ?.Send(buffer.readBuffer, start - 2, length + 2, SocketFlags.None);
             return HookResult.Cancel;
