@@ -1,10 +1,15 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
+using System.Net;
 using System.Net.Sockets;
+using System.Reflection;
 using System.Threading;
+using MaxMind;
 using OTAPI;
 using Terraria;
+using Terraria.Localization;
 using TerrariaApi.Server;
 using TShockAPI;
 
@@ -25,7 +30,7 @@ namespace Chireiden.Stellaria
 
         public override string Author => "SGKoishi";
         public override string Name => "Stellaria";
-        public override Version Version => new Version(1, 0, 2, 0);
+        public override Version Version => new Version(1, 0, 4, 0);
         public override string Description => "In-game multi world plugin";
 
         public override void Initialize()
@@ -79,8 +84,59 @@ namespace Chireiden.Stellaria
             Hooks.Net.ReceiveData = ReceiveData;
             ServerApi.Hooks.ServerLeave.Register(this, args =>
                 _forward[args.Who] = new ForwardPlayer {Server = Server.Current});
-            //Commands.ChatCommands.RemoveAll(c => c.HasAlias("ban") || c.HasAlias("who") || c.HasAlias("kick"));
+            Commands.ChatCommands.RemoveAll(c => c.HasAlias("who"));
+            if (!_config.Host)
+            {
+                // Clear the ServerConnect hook, because it load host server as player's IP address
+                // We will add another OnConnect to get correct IP address behind host.
+                (typeof(HandlerCollection<ConnectEventArgs>)
+                    .GetField("registrations", BindingFlags.Instance | BindingFlags.NonPublic)
+                    ?.GetValue(ServerApi.Hooks.ServerConnect) as dynamic)?.Clear();
+                ServerApi.Hooks.ServerConnect.Register(this, OnServerConnect);
+            }
+
             Commands.ChatCommands.Add(new Command("chireiden.stellaria.use", SwitchVerse, "sv"));
+        }
+
+        private void OnServerConnect(ConnectEventArgs args)
+        {
+            if (TShock.ShuttingDown)
+            {
+                NetMessage.SendData(2, args.Who, -1, NetworkText.FromLiteral("Server is shutting down..."));
+                args.Handled = true;
+                return;
+            }
+
+            var player = new TSPlayer(args.Who);
+            Utils.CacheIP?.SetValue(player, "");
+            throw new NotImplementedException("HACKME: Change TSPlayer's CacheIP to real IP address behind host.");
+            if (TShock.Utils.ActivePlayers() + 1 > TShock.Config.MaxSlots + TShock.Config.ReservedSlots)
+            {
+                TShock.Utils.ForceKick(player, TShock.Config.ServerFullNoReservedReason, true);
+                args.Handled = true;
+                return;
+            }
+
+            if (!FileTools.OnWhitelist(player.IP))
+            {
+                TShock.Utils.ForceKick(player, TShock.Config.WhitelistKickReason, true);
+                args.Handled = true;
+                return;
+            }
+
+            if (TShock.Geo != null)
+            {
+                var code = TShock.Geo.TryGetCountryCode(IPAddress.Parse(player.IP));
+                player.Country = code == null ? "N/A" : GeoIPCountry.GetCountryNameByCode(code);
+                if (code == "A1" && TShock.Config.KickProxyUsers)
+                {
+                    TShock.Utils.ForceKick(player, "Proxies are not allowed.", true);
+                    args.Handled = true;
+                    return;
+                }
+            }
+
+            TShock.Players[args.Who] = player;
         }
 
         private void SwitchVerse(CommandArgs args)
@@ -92,17 +148,18 @@ namespace Chireiden.Stellaria
             }
 
             var name = args.Parameters[0].ToLower();
+            var ps = _config.Servers.Where(s => args.Player.HasPermission(s.Permission));
             if (name == "list")
             {
                 args.Player.SendInfoMessage(
-                    $"Available world: {string.Join(", ", _config.Servers.Where(s => args.Player.HasPermission(s.Permission)).Select(s => s.Name))}");
+                    $"Available world: {string.Join(", ", ps.Select(s => s.Name))}");
                 return;
             }
 
-            var nvl = _config.Servers.Where(s => s.Name == name && args.Player.HasPermission(s.Permission));
+            var nvl = ps.Where(s => s.Name == name);
             if (!nvl.Any())
             {
-                nvl = _config.Servers.Where(s => s.Name.StartsWith(name) && args.Player.HasPermission(s.Permission));
+                nvl = ps.Where(s => s.Name.StartsWith(name));
                 if (!nvl.Any())
                 {
                     args.Player.SendInfoMessage($"No match: {name}");
@@ -153,7 +210,18 @@ namespace Chireiden.Stellaria
 
             if (packetid == 25)
             {
-                // TODO: Handle some command (e.g. /lobby) if necessary
+                var stringBuffer = new byte[length - 1];
+                Buffer.BlockCopy(buffer.readBuffer, start + 1, stringBuffer, 0, length - 1);
+                var text = new BinaryReader(new MemoryStream(stringBuffer)).ReadString();
+                if (text.StartsWith(Commands.Specifier) || text.StartsWith(Commands.SilentSpecifier))
+                {
+                    var p = Utils.ParseParameters(text);
+                    // A GlobalCommand, handled by host server.
+                    if (p.Count > 0 && _forward[buffer.whoAmI].Server.GlobalCommands.Contains(p[0]))
+                    {
+                        return _receiveDataHandler.Invoke(buffer, ref packetid, ref readoffset, ref start, ref length);
+                    }
+                }
             }
 
             _forward[buffer.whoAmI].Connection?.Client
@@ -184,6 +252,8 @@ namespace Chireiden.Stellaria
                             (byte) 0, (byte) 0, (byte) 0, (byte) 0 // SpawnXY (short) here
                         });
                         _forward[wai].Init12 = true;
+                        NetMessage.SendData(65, -1, -1, NetworkText.Empty, 0, wai, _forward[wai].Server.SpawnX,
+                            _forward[wai].Server.SpawnY, 1);
                     }
 
                     Netplay.Clients[wai].Socket.AsyncSend(_forward[wai].Buffer, 0, r, delegate { });

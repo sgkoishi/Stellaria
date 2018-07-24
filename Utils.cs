@@ -11,8 +11,16 @@ namespace Chireiden.Stellaria
 {
     public class Utils
     {
-        public static MethodInfo ParseParameters =
+        private static readonly MethodInfo _parseParameters =
             typeof(Commands).GetMethod("ParseParameters", BindingFlags.NonPublic | BindingFlags.Static);
+
+        internal static FieldInfo CacheIP =
+            typeof(TSPlayer).GetField("CacheIP", BindingFlags.Instance | BindingFlags.NonPublic);
+
+        public static List<string> ParseParameters(string text)
+        {
+            return (List<string>) _parseParameters?.Invoke(null, new object[] {text.Remove(0, 1)});
+        }
 
         public static void ReadConfig<TConfig>(string path, TConfig defaultConfig, out TConfig config)
         {
@@ -35,7 +43,7 @@ namespace Chireiden.Stellaria
                 return;
             }
 
-            var args = (List<string>) ParseParameters?.Invoke(null, new object[] {text.Remove(0, 1)});
+            var args = ParseParameters(text);
             if (args == null || args.Count < 1)
             {
                 return;

@@ -20,6 +20,8 @@ namespace Chireiden.Stellaria
         public List<string> OnEnter = new List<string>();
         public List<string> OnLeave = new List<string>();
         public List<string> GlobalCommands = new List<string>();
+        public int SpawnX;
+        public int SpawnY;
         internal bool Loopback {
             get
             {
