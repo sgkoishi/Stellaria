@@ -4,9 +4,9 @@ namespace Chireiden.Stellaria
 {
     public class ForwardPlayer
     {
-        public int Server = -1;
+        public Server Server;
         public TcpClient Connection;
-        public byte[] Buffer = new byte[1024];
+        public byte[] Buffer;
         public bool Init8;
         public bool Init12;
     }

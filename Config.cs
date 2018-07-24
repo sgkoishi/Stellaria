@@ -1,4 +1,6 @@
-﻿using System.Collections.Generic;
+﻿using System.CodeDom;
+using System.Collections.Generic;
+using System.Net;
 
 namespace Chireiden.Stellaria
 {
@@ -13,7 +15,25 @@ namespace Chireiden.Stellaria
     {
         public string Address;
         public ushort Port;
-        public int SpawnX;
-        public int SpawnY;
+        public string Name;
+        public string Permission;
+        public List<string> OnEnter = new List<string>();
+        public List<string> OnLeave = new List<string>();
+        public List<string> GlobalCommands = new List<string>();
+        internal bool Loopback {
+            get
+            {
+                if (CachedLoopback.HasValue)
+                {
+                    return CachedLoopback.Value;
+                }
+
+                return (CachedLoopback = IPAddress.IsLoopback(IPAddress.Parse(Address))).Value;
+            }
+        }
+
+        private bool? CachedLoopback;
+
+        public static Server Current = new Server {Name = "current", Port = 0};
     }
 }
