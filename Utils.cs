@@ -22,6 +22,14 @@ namespace Chireiden.Stellaria
             return (List<string>) _parseParameters?.Invoke(null, new object[] {text.Remove(0, 1)});
         }
 
+        private static Random rng = new Random();
+        public static byte[] RandomKey(int length)
+        {
+            var ret = new byte[length];
+            rng.NextBytes(ret);
+            return ret;
+        }
+
         public static void ReadConfig<TConfig>(string path, TConfig defaultConfig, out TConfig config)
         {
             if (!File.Exists(path))

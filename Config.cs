@@ -7,6 +7,7 @@ namespace Chireiden.Stellaria
     public class Config
     {
         public bool Host = true;
+        public byte[] Key;
         public byte[] JoinBytes;
         public List<Server> Servers = new List<Server>();
     }
@@ -22,6 +23,7 @@ namespace Chireiden.Stellaria
         public List<string> GlobalCommands = new List<string>();
         public int SpawnX;
         public int SpawnY;
+        public byte[] Key;
         internal bool Loopback {
             get
             {
