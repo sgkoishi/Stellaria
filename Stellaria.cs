@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -33,6 +34,9 @@ namespace Chireiden.Stellaria
 
         public override void Initialize()
         {
+            _receiveDataHandler = Hooks.Net.ReceiveData;
+            Hooks.Net.ReceiveData = ReceiveData;
+            ServerApi.Hooks.ServerLeave.Register(this, OnLeave);
             var key = Utils.RandomKey(32);
             Utils.ReadConfig("tshock\\stellaria.json",
                 new Config
@@ -82,29 +86,29 @@ namespace Chireiden.Stellaria
                     Key = key,
                     Name = "lobby"
                 }, out _config);
-            var serverCount = _config.Servers.Count;
-            if (_config.Servers.Select(f => f.Name).Distinct().Count() != serverCount)
+            if (_config.Host)
             {
-                TShock.Log.ConsoleError("[Stellaria] Server name conflict");
-                return;
-            }
+                var serverCount = _config.Servers.Count;
+                if (_config.Servers.Select(f => f.Name).Distinct().Count() != serverCount)
+                {
+                    TShock.Log.ConsoleError("[Stellaria] Server name conflict");
+                    return;
+                }
 
-            if (_config.Servers.Select(f => f.Address + ":" + f.Port).Distinct().Count() != serverCount)
-            {
-                TShock.Log.ConsoleError("[Stellaria] Server address conflict");
-                return;
+                if (_config.Servers.Select(f => f.Address + ":" + f.Port).Distinct().Count() != serverCount)
+                {
+                    TShock.Log.ConsoleError("[Stellaria] Server address conflict");
+                    return;
+                }
             }
-
-            _receiveDataHandler = Hooks.Net.ReceiveData;
-            Hooks.Net.ReceiveData = ReceiveData;
-            ServerApi.Hooks.ServerLeave.Register(this, OnLeave);
-            if (!_config.Host)
+            else
             {
                 // Clear the ServerConnect hook, because it load host server as player's IP address
                 // We will add another OnConnect to get correct IP address behind host.
-                var f = typeof(HandlerCollection<ConnectEventArgs>)
-                    .GetField("registrations", BindingFlags.Instance | BindingFlags.NonPublic);
-                f?.FieldType.GetMethod("Clear")?.Invoke(f.GetValue(ServerApi.Hooks.ServerConnect), new object[0]);
+                // https://stackoverflow.com/questions/51532079/call-a-public-method-of-a-objects-actual-type
+                ((IList) typeof(HandlerCollection<ConnectEventArgs>)
+                    .GetField("registrations", BindingFlags.Instance | BindingFlags.NonPublic)
+                    .GetValue(ServerApi.Hooks.ServerConnect)).Clear();
                 ServerApi.Hooks.ServerConnect.Register(this, OnServerConnect);
             }
 
@@ -304,7 +308,6 @@ namespace Chireiden.Stellaria
                     if (buffer.readBuffer[start + 13 + i] != _config.Key[i])
                     {
                         validKey = false;
-                        Console.WriteLine("1 !validKey");
                         break;
                     }
                 }
@@ -333,7 +336,6 @@ namespace Chireiden.Stellaria
                             // A GlobalCommand, handled by host server.
                             if (p.Count > 0 && _forward[buffer.whoAmI].Server.GlobalCommands.Contains(p[0]))
                             {
-                                Console.WriteLine("Handled GlobalCommand");
                                 return _receiveDataHandler.Invoke(buffer, ref packetid, ref readoffset, ref start,
                                     ref length);
                             }

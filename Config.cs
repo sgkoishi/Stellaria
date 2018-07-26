@@ -15,10 +15,10 @@ namespace Chireiden.Stellaria
     public class Server
     {
         private static Server _current;
-        public string Address;
+        public string Address="";
         public List<string> GlobalCommands = new List<string>();
         public byte[] Key;
-        public string Name;
+        public string Name="";
         public List<string> OnEnter = new List<string>();
         public List<string> OnLeave = new List<string>();
         public string Permission;
@@ -35,7 +35,12 @@ namespace Chireiden.Stellaria
                     return _current;
                 }
 
-                return _current = Stellaria._config.Servers.Single(s => s.Name == Stellaria._config.Name);
+                if (Stellaria._config.Host)
+                {
+                    return _current = Stellaria._config.Servers.Single(s => s.Name == Stellaria._config.Name);
+                }
+
+                return _current = new Server {Name = Stellaria._config.Name};
             }
         }
     }
