@@ -9,6 +9,6 @@ namespace Chireiden.Stellaria
         public byte[] Buffer;
         public bool Init8;
         public bool Init12;
-        public string IP;
+        public string IP = "";
     }
 }

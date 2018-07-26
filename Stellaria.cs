@@ -19,8 +19,8 @@ namespace Chireiden.Stellaria
     public class Stellaria : TerrariaPlugin
     {
         private static Hooks.Net.ReceiveDataHandler _receiveDataHandler;
+        internal static Config _config;
         private readonly Dictionary<int, ForwardPlayer> _forward = new Dictionary<int, ForwardPlayer>();
-        private Config _config;
 
         public Stellaria(Main game) : base(game)
         {
@@ -28,11 +28,12 @@ namespace Chireiden.Stellaria
 
         public override string Author => "SGKoishi";
         public override string Name => "Stellaria";
-        public override Version Version => new Version(1, 0, 5, 0);
+        public override Version Version => Assembly.GetExecutingAssembly().GetName().Version;
         public override string Description => "In-game multi world plugin";
 
         public override void Initialize()
         {
+            var key = Utils.RandomKey(32);
             Utils.ReadConfig("tshock\\stellaria.json",
                 new Config
                 {
@@ -45,7 +46,9 @@ namespace Chireiden.Stellaria
                             Name = "s1",
                             GlobalCommands = new List<string> {"sv", "who"},
                             Permission = "",
-                            Key = Utils.RandomKey(32)
+                            Key = Utils.RandomKey(32),
+                            SpawnX = 1000,
+                            SpawnY = 300
                         },
                         new Server
                         {
@@ -54,7 +57,9 @@ namespace Chireiden.Stellaria
                             Name = "lobby",
                             GlobalCommands = new List<string> {"sv", "who"},
                             Permission = "",
-                            Key = Utils.RandomKey(32)
+                            Key = key,
+                            SpawnX = 1000,
+                            SpawnY = 300
                         },
                         new Server
                         {
@@ -63,17 +68,19 @@ namespace Chireiden.Stellaria
                             Name = "s2",
                             GlobalCommands = new List<string> {"sv", "who"},
                             Permission = "",
-                            Key = Utils.RandomKey(32)
+                            Key = Utils.RandomKey(32),
+                            SpawnX = 1000,
+                            SpawnY = 300
                         }
                     },
                     // The first message sent to server to join.
                     // Construct:
-                    // Total Length (2 bytes)  15, 0,
                     // Packet id (1 byte)      1,
                     // String length (1 byte)  11,
                     // "Terraria194"           84, 101, 114, 114, 97, 114, 105, 97, 49, 57, 52
-                    JoinBytes = new byte[] {15, 0, 1, 11, 84, 101, 114, 114, 97, 114, 105, 97, 49, 57, 52},
-                    Key = Utils.RandomKey(32)
+                    JoinBytes = new byte[] {1, 11, 84, 101, 114, 114, 97, 114, 105, 97, 49, 57, 52},
+                    Key = key,
+                    Name = "lobby"
                 }, out _config);
             var serverCount = _config.Servers.Count;
             if (_config.Servers.Select(f => f.Name).Distinct().Count() != serverCount)
@@ -90,21 +97,25 @@ namespace Chireiden.Stellaria
 
             _receiveDataHandler = Hooks.Net.ReceiveData;
             Hooks.Net.ReceiveData = ReceiveData;
-            ServerApi.Hooks.ServerLeave.Register(this, args =>
-                _forward[args.Who] = new ForwardPlayer {Server = Server.Current});
+            ServerApi.Hooks.ServerLeave.Register(this, OnLeave);
             if (!_config.Host)
             {
                 // Clear the ServerConnect hook, because it load host server as player's IP address
                 // We will add another OnConnect to get correct IP address behind host.
-                (typeof(HandlerCollection<ConnectEventArgs>)
-                    .GetField("registrations", BindingFlags.Instance | BindingFlags.NonPublic)
-                    ?.GetValue(ServerApi.Hooks.ServerConnect) as dynamic)?.Clear();
+                var f = typeof(HandlerCollection<ConnectEventArgs>)
+                    .GetField("registrations", BindingFlags.Instance | BindingFlags.NonPublic);
+                f?.FieldType.GetMethod("Clear")?.Invoke(f.GetValue(ServerApi.Hooks.ServerConnect), new object[0]);
                 ServerApi.Hooks.ServerConnect.Register(this, OnServerConnect);
             }
 
             Commands.ChatCommands.RemoveAll(c => c.HasAlias("who"));
             Commands.ChatCommands.Add(new Command(ListConnectedPlayers, "playing", "online", "who"));
             Commands.ChatCommands.Add(new Command("chireiden.stellaria.use", SwitchVerse, "sv"));
+        }
+
+        private void OnLeave(LeaveEventArgs args)
+        {
+            _forward[args.Who] = new ForwardPlayer {Server = Server.Current};
         }
 
         private void ListConnectedPlayers(CommandArgs args)
@@ -241,22 +252,30 @@ namespace Chireiden.Stellaria
             }
 
             var nv = nvl.First();
-            if (nv.Loopback || _forward[args.TPlayer.whoAmI].Server.Name == nv.Name)
+            if (_forward[args.TPlayer.whoAmI].Server.Name == nv.Name)
             {
                 args.Player.SendInfoMessage("Currect world: " + nv.Name);
                 return;
             }
 
             args.Player.SendInfoMessage("Switch to " + nv);
+            if (nv.Name == _config.Name)
+            {
+                // Back to host server, no new TcpClient.
+                _forward[args.TPlayer.whoAmI].Connection.Close();
+                _forward[args.TPlayer.whoAmI].Server = nv;
+                _forward[args.TPlayer.whoAmI].Connection = null;
+                return;
+            }
+
             var tc = new TcpClient();
-            tc.Connect(_forward[args.TPlayer.whoAmI].Server.Address, _forward[args.TPlayer.whoAmI].Server.Port);
-            tc.Client.Send(_config.JoinBytes);
+            tc.Connect(nv.Address, nv.Port);
             // Send real IP to server. Use secret key to prevent modified client cheating about their IP.
             var ms = new MemoryStream();
             var bw = new BinaryWriter(ms);
-            bw.Write((short) _config.Key.Length + args.Player.IP.Length + 4);
-            bw.Write((byte) 94);
-            bw.Write(_config.Key);
+            bw.Write((short) (15 + _config.Key.Length + 1 + args.Player.IP.Length));
+            bw.Write(_config.JoinBytes);
+            bw.Write(nv.Key);
             bw.Write(args.Player.IP);
             tc.Client.Send(ms.ToArray());
             _forward[args.TPlayer.whoAmI] = new ForwardPlayer
@@ -271,61 +290,63 @@ namespace Chireiden.Stellaria
         private HookResult ReceiveData(MessageBuffer buffer, ref byte packetid, ref int readoffset, ref int start,
             ref int length)
         {
+            if (packetid == 1)
+            {
+                _forward[buffer.whoAmI] = new ForwardPlayer {Server = Server.Current};
+                if (length <= 15)
+                {
+                    return _receiveDataHandler.Invoke(buffer, ref packetid, ref readoffset, ref start, ref length);
+                }
+
+                var validKey = true;
+                for (var i = 0; i < _config.Key.Length; i++)
+                {
+                    if (buffer.readBuffer[start + 13 + i] != _config.Key[i])
+                    {
+                        validKey = false;
+                        Console.WriteLine("1 !validKey");
+                        break;
+                    }
+                }
+
+                if (validKey)
+                {
+                    _forward[buffer.whoAmI].IP =
+                        Utils.ReadFromBinaryReader(buffer.readBuffer, start + 13 + _config.Key.Length);
+                    Console.WriteLine("1 ip = " + _forward[buffer.whoAmI].IP);
+                }
+
+                return _receiveDataHandler.Invoke(buffer, ref packetid, ref readoffset, ref start, ref length);
+            }
+
             if (_config.Host)
             {
-                if (packetid == 1)
+                if (packetid == 82)
                 {
-                    _forward[buffer.whoAmI] = new ForwardPlayer {Server = Server.Current};
-                    return _receiveDataHandler.Invoke(buffer, ref packetid, ref readoffset, ref start, ref length);
-                }
-
-                if (_forward[buffer.whoAmI].Server.Name == "current")
-                {
-                    return _receiveDataHandler.Invoke(buffer, ref packetid, ref readoffset, ref start, ref length);
-                }
-
-                if (packetid == 25)
-                {
-                    var text = new BinaryReader(new MemoryStream(buffer.readBuffer, start + 1, length - 1))
-                        .ReadString();
-                    if (text.StartsWith(Commands.Specifier) || text.StartsWith(Commands.SilentSpecifier))
+                    if (buffer.readBuffer[start + 1] == 1 &&
+                        Utils.ReadFromBinaryReader(buffer.readBuffer, start + 3) == "Say")
                     {
-                        var p = Utils.ParseParameters(text);
-                        // A GlobalCommand, handled by host server.
-                        if (p.Count > 0 && _forward[buffer.whoAmI].Server.GlobalCommands.Contains(p[0]))
+                        var text = Utils.ReadFromBinaryReader(buffer.readBuffer, start + 7);
+                        if (text.StartsWith(Commands.Specifier) || text.StartsWith(Commands.SilentSpecifier))
                         {
-                            return _receiveDataHandler.Invoke(buffer, ref packetid, ref readoffset, ref start,
-                                ref length);
+                            var p = Utils.ParseParameters(text);
+                            // A GlobalCommand, handled by host server.
+                            if (p.Count > 0 && _forward[buffer.whoAmI].Server.GlobalCommands.Contains(p[0]))
+                            {
+                                Console.WriteLine("Handled GlobalCommand");
+                                return _receiveDataHandler.Invoke(buffer, ref packetid, ref readoffset, ref start,
+                                    ref length);
+                            }
                         }
                     }
                 }
 
-                _forward[buffer.whoAmI].Connection?.Client
-                    ?.Send(buffer.readBuffer, start - 2, length + 2, SocketFlags.None);
-                return HookResult.Cancel;
-            }
-
-            if (packetid != 94)
-            {
-                return _receiveDataHandler.Invoke(buffer, ref packetid, ref readoffset, ref start, ref length);
-            }
-
-            var validKey = true;
-            for (var i = 0; i < _config.Key.Length; i++)
-            {
-                if (buffer.readBuffer[start + 1 + i] != _config.Key[i])
+                if (_forward[buffer.whoAmI].Server.Name != _config.Name)
                 {
-                    validKey = false;
-                    break;
+                    _forward[buffer.whoAmI].Connection?.Client
+                        ?.Send(buffer.readBuffer, start - 2, length + 2, SocketFlags.None);
+                    return HookResult.Cancel;
                 }
-            }
-
-            if (validKey)
-            {
-                _forward[buffer.whoAmI].IP = new BinaryReader(new MemoryStream(buffer.readBuffer,
-                    start + 1 + _config.Key.Length,
-                    length - 1 - _config.Key.Length)).ReadString();
-                return HookResult.Cancel;
             }
 
             return _receiveDataHandler.Invoke(buffer, ref packetid, ref readoffset, ref start, ref length);
@@ -354,8 +375,8 @@ namespace Chireiden.Stellaria
                             (byte) 0, (byte) 0, (byte) 0, (byte) 0 // SpawnXY (short) here
                         });
                         _forward[wai].Init12 = true;
-                        NetMessage.SendData(65, -1, -1, NetworkText.Empty, 0, wai, _forward[wai].Server.SpawnX,
-                            _forward[wai].Server.SpawnY, 1);
+                        NetMessage.SendData(65, -1, -1, NetworkText.Empty, 0, wai, _forward[wai].Server.SpawnX * 16,
+                            _forward[wai].Server.SpawnY * 16, 1);
                     }
 
                     Netplay.Clients[wai].Socket.AsyncSend(_forward[wai].Buffer, 0, r, delegate { });

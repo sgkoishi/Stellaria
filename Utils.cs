@@ -17,17 +17,23 @@ namespace Chireiden.Stellaria
         internal static FieldInfo CacheIP =
             typeof(TSPlayer).GetField("CacheIP", BindingFlags.Instance | BindingFlags.NonPublic);
 
+        private static readonly Random rng = new Random();
+
         public static List<string> ParseParameters(string text)
         {
             return (List<string>) _parseParameters?.Invoke(null, new object[] {text.Remove(0, 1)});
         }
 
-        private static Random rng = new Random();
         public static byte[] RandomKey(int length)
         {
             var ret = new byte[length];
             rng.NextBytes(ret);
             return ret;
+        }
+
+        public static string ReadFromBinaryReader(byte[] buffer, int start)
+        {
+            return new BinaryReader(new MemoryStream(buffer, start, buffer[start] + 1)).ReadString();
         }
 
         public static void ReadConfig<TConfig>(string path, TConfig defaultConfig, out TConfig config)
