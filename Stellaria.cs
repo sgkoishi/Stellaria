@@ -158,12 +158,12 @@ namespace Chireiden.Stellaria
                 return;
             }
 
-            args.Player.SendSuccessMessage("Total Online Players ({0}/{1})", TShock.Utils.ActivePlayers(),
+            args.Player.SendSuccessMessage("Total Online Players ({0}/{1})", TShock.Utils.GetActivePlayerCount(),
                 TShock.Config.MaxSlots);
             var players = from p in TShock.Players
                 where p != null && p.Active
                 group displayIdsRequested
-                    ? $"{p.Name} (IX: {p.Index}{(p.User != null ? ", ID: " + p.User.ID : "")})"
+                    ? $"{p.Name} (IX: {p.Index}{(p.Account != null ? ", ID: " + p.Account.ID : "")})"
                     : p.Name by _forward[p.Index].Server;
             var content = new List<string>();
             foreach (var server in players)
@@ -192,16 +192,16 @@ namespace Chireiden.Stellaria
 
             var player = new TSPlayer(args.Who);
             Utils.CacheIP?.SetValue(player, _forward[args.Who].IP);
-            if (TShock.Utils.ActivePlayers() + 1 > TShock.Config.MaxSlots + TShock.Config.ReservedSlots)
+            if (TShock.Utils.GetActivePlayerCount() + 1 > TShock.Config.MaxSlots + TShock.Config.ReservedSlots)
             {
-                TShock.Utils.ForceKick(player, TShock.Config.ServerFullNoReservedReason, true);
+                player.Kick(TShock.Config.ServerFullNoReservedReason, true);
                 args.Handled = true;
                 return;
             }
 
             if (!FileTools.OnWhitelist(player.IP))
             {
-                TShock.Utils.ForceKick(player, TShock.Config.WhitelistKickReason, true);
+                player.Kick(TShock.Config.WhitelistKickReason, true);
                 args.Handled = true;
                 return;
             }
@@ -212,7 +212,7 @@ namespace Chireiden.Stellaria
                 player.Country = code == null ? "N/A" : GeoIPCountry.GetCountryNameByCode(code);
                 if (code == "A1" && TShock.Config.KickProxyUsers)
                 {
-                    TShock.Utils.ForceKick(player, "Proxies are not allowed.", true);
+                    player.Kick("Proxies are not allowed.", true);
                     args.Handled = true;
                     return;
                 }
