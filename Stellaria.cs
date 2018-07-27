@@ -1,5 +1,4 @@
 ﻿using System;
-using System.Collections;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -100,21 +99,31 @@ namespace Chireiden.Stellaria
                     TShock.Log.ConsoleError("[Stellaria] Server address conflict");
                     return;
                 }
+
+                ServerApi.Hooks.NetSendBytes.Register(this, OnSendBytes, int.MaxValue);
             }
             else
             {
                 // Clear the ServerConnect hook, because it load host server as player's IP address
                 // We will add another OnConnect to get correct IP address behind host.
                 // https://stackoverflow.com/questions/51532079/call-a-public-method-of-a-objects-actual-type
-                ((IList) typeof(HandlerCollection<ConnectEventArgs>)
-                    .GetField("registrations", BindingFlags.Instance | BindingFlags.NonPublic)
-                    .GetValue(ServerApi.Hooks.ServerConnect)).Clear();
-                ServerApi.Hooks.ServerConnect.Register(this, OnServerConnect);
+                // ((IList) typeof(HandlerCollection<ConnectEventArgs>)
+                //     .GetField("registrations", BindingFlags.Instance | BindingFlags.NonPublic)
+                //     .GetValue(ServerApi.Hooks.ServerConnect)).Clear();
+                ServerApi.Hooks.ServerConnect.Register(this, OnServerConnect, int.MaxValue);
             }
 
             Commands.ChatCommands.RemoveAll(c => c.HasAlias("who"));
             Commands.ChatCommands.Add(new Command(ListConnectedPlayers, "playing", "online", "who"));
             Commands.ChatCommands.Add(new Command("chireiden.stellaria.use", SwitchVerse, "sv"));
+        }
+
+        private void OnSendBytes(SendBytesEventArgs args)
+        {
+            if (_forward[args.Socket.Id].Server.Name != _config.Name)
+            {
+                args.Handled = true;
+            }
         }
 
         private void OnLeave(LeaveEventArgs args)
@@ -230,65 +239,71 @@ namespace Chireiden.Stellaria
             }
 
             var name = args.Parameters[0].ToLower();
-            var ps = _config.Servers.Where(s => args.Player.HasPermission(s.Permission));
+            var permittedWorld = _config.Servers.Where(s => args.Player.HasPermission(s.Permission));
             if (name == "list")
             {
                 args.Player.SendInfoMessage(
-                    $"Available world: {string.Join(", ", ps.Select(s => s.Name))}");
+                    $"Available world: {string.Join(", ", permittedWorld.Select(s => s.Name))}");
                 return;
             }
 
-            var nvl = ps.Where(s => s.Name == name);
-            if (!nvl.Any())
+            var matchName = permittedWorld.Where(s => s.Name == name);
+            if (!matchName.Any())
             {
-                nvl = ps.Where(s => s.Name.StartsWith(name));
-                if (!nvl.Any())
+                matchName = permittedWorld.Where(s => s.Name.StartsWith(name));
+                if (!matchName.Any())
                 {
                     args.Player.SendInfoMessage($"No match: {name}");
                     return;
                 }
 
-                if (nvl.Count() > 1)
+                if (matchName.Count() > 1)
                 {
                     args.Player.SendInfoMessage($"Multiple matches: {name}");
                     return;
                 }
             }
 
-            var nv = nvl.First();
-            if (_forward[args.TPlayer.whoAmI].Server.Name == nv.Name)
+            var newWorld = matchName.First();
+            var whoAmI = args.TPlayer.whoAmI;
+            if (_forward[whoAmI].Server.Name == newWorld.Name)
             {
-                args.Player.SendInfoMessage("Currect world: " + nv.Name);
+                args.Player.SendInfoMessage("Currect world: " + newWorld.Name);
                 return;
             }
 
-            args.Player.SendInfoMessage("Switch to " + nv);
-            if (nv.Name == _config.Name)
+            args.Player.SendInfoMessage("Switch to " + newWorld.Name);
+            if (newWorld.Name == _config.Name)
             {
+                NetMessage.SendData(14, -1, whoAmI, null, whoAmI, (args.TPlayer.active = true).GetHashCode());
+                NetMessage.SendData(4, -1, whoAmI, null, whoAmI);
+                NetMessage.SendData(13, -1, whoAmI, null, whoAmI);
                 // Back to host server, no new TcpClient.
-                _forward[args.TPlayer.whoAmI].Connection.Close();
-                _forward[args.TPlayer.whoAmI].Server = nv;
-                _forward[args.TPlayer.whoAmI].Connection = null;
+                _forward[whoAmI].Connection.Close();
+                _forward[whoAmI].Server = newWorld;
+                _forward[whoAmI].Connection = null;
                 return;
             }
 
+            // Turn player to !active in host server
+            NetMessage.SendData(14, -1, whoAmI, null, whoAmI, (args.TPlayer.active = false).GetHashCode());
             var tc = new TcpClient();
-            tc.Connect(nv.Address, nv.Port);
+            tc.Connect(newWorld.Address, newWorld.Port);
             // Send real IP to server. Use secret key to prevent modified client cheating about their IP.
             var ms = new MemoryStream();
             var bw = new BinaryWriter(ms);
             bw.Write((short) (15 + _config.Key.Length + 1 + args.Player.IP.Length));
             bw.Write(_config.JoinBytes);
-            bw.Write(nv.Key);
+            bw.Write(newWorld.Key);
             bw.Write(args.Player.IP);
             tc.Client.Send(ms.ToArray());
-            _forward[args.TPlayer.whoAmI] = new ForwardPlayer
+            _forward[whoAmI] = new ForwardPlayer
             {
                 Buffer = new byte[1024],
                 Connection = tc,
-                Server = nv
+                Server = newWorld
             };
-            ThreadPool.QueueUserWorkItem(ServerLoop, args.TPlayer.whoAmI);
+            ThreadPool.QueueUserWorkItem(ServerLoop, whoAmI);
         }
 
         private HookResult ReceiveData(MessageBuffer buffer, ref byte packetid, ref int readoffset, ref int start,
@@ -355,39 +370,39 @@ namespace Chireiden.Stellaria
 
         private void ServerLoop(object state)
         {
-            var wai = (int) state;
-            while (_forward[wai].Connection != null && _forward[wai].Connection.Connected)
+            var whoAmI = (int) state;
+            while (_forward[whoAmI].Connection != null && _forward[whoAmI].Connection.Connected)
             {
                 try
                 {
-                    var r = _forward[wai].Connection.Client.Receive(_forward[wai].Buffer);
-                    if (_forward[wai].Buffer[2] == 7 && !_forward[wai].Init8)
+                    var r = _forward[whoAmI].Connection.Client.Receive(_forward[whoAmI].Buffer);
+                    if (_forward[whoAmI].Buffer[2] == 7 && !_forward[whoAmI].Init8)
                     {
-                        _forward[wai].Connection.Client.Send(new[]
+                        _forward[whoAmI].Connection.Client.Send(new[]
                         {
                             (byte) 11, (byte) 0, (byte) 8,
                             (byte) 0, (byte) 0, (byte) 0, (byte) 0, // SpawnX here
                             (byte) 0, (byte) 0, (byte) 0, (byte) 0 // SpawnY here
                         });
-                        _forward[wai].Init8 = true;
-                        _forward[wai].Connection.Client.Send(new[]
+                        _forward[whoAmI].Init8 = true;
+                        _forward[whoAmI].Connection.Client.Send(new[]
                         {
-                            (byte) 8, (byte) 0, (byte) 12, (byte) wai,
+                            (byte) 8, (byte) 0, (byte) 12, (byte) whoAmI,
                             (byte) 0, (byte) 0, (byte) 0, (byte) 0 // SpawnXY (short) here
                         });
-                        _forward[wai].Init12 = true;
-                        NetMessage.SendData(65, -1, -1, NetworkText.Empty, 0, wai, _forward[wai].Server.SpawnX * 16,
-                            _forward[wai].Server.SpawnY * 16, 1);
+                        _forward[whoAmI].Init12 = true;
+                        NetMessage.SendData(65, -1, -1, NetworkText.Empty, 0, whoAmI, _forward[whoAmI].Server.SpawnX * 16,
+                            _forward[whoAmI].Server.SpawnY * 16, 1);
                     }
 
-                    Netplay.Clients[wai].Socket.AsyncSend(_forward[wai].Buffer, 0, r, delegate { });
+                    Netplay.Clients[whoAmI].Socket.AsyncSend(_forward[whoAmI].Buffer, 0, r, delegate { });
                 }
                 catch
                 {
                 }
             }
 
-            _forward[wai].Server = Server.Current;
+            _forward[whoAmI].Server = Server.Current;
         }
     }
 }
