@@ -316,7 +316,6 @@ namespace Chireiden.Stellaria
                 {
                     _forward[buffer.whoAmI].IP =
                         Utils.ReadFromBinaryReader(buffer.readBuffer, start + 13 + _config.Key.Length);
-                    Console.WriteLine("1 ip = " + _forward[buffer.whoAmI].IP);
                 }
 
                 return _receiveDataHandler.Invoke(buffer, ref packetid, ref readoffset, ref start, ref length);
