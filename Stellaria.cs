@@ -128,7 +128,7 @@ namespace Chireiden.Stellaria
 
         private void OnLeave(LeaveEventArgs args)
         {
-            _forward[args.Who] = new ForwardPlayer {Server = Server.Current};
+            _forward.Remove(args.Who);
         }
 
         private void ListConnectedPlayers(CommandArgs args)
@@ -167,18 +167,28 @@ namespace Chireiden.Stellaria
                 return;
             }
 
-            args.Player.SendSuccessMessage("Total Online Players ({0}/{1})", TShock.Utils.GetActivePlayerCount(),
-                TShock.Config.MaxSlots);
-            var players = from p in TShock.Players
-                where p != null && p.Active
+            var activePlayers = TShock.Players.Where(p => p != null && (p.Active || _forward.ContainsKey(p.Index)));
+            args.Player.SendSuccessMessage($"Total Online Players ({activePlayers.Count()}/{TShock.Config.MaxSlots})");
+            var players = from p in activePlayers
                 group displayIdsRequested
                     ? $"{p.Name} (IX: {p.Index}{(p.Account != null ? ", ID: " + p.Account.ID : "")})"
                     : p.Name by _forward[p.Index].Server;
             var content = new List<string>();
+            var hiddenPlayers = 0;
             foreach (var server in players)
             {
+                if (!args.Player.HasPermission(server.Key.Permission))
+                {
+                    hiddenPlayers += server.Count();
+                    continue;
+                }
                 content.Add($"Players in {server.Key.Name} ({server.Count()}):");
                 content.AddRange(PaginationTools.BuildLinesFromTerms(server));
+            }
+
+            if (hiddenPlayers != 0)
+            {
+                content.Add($"{hiddenPlayers} players in hidden server.");
             }
 
             PaginationTools.SendPage(args.Player, pageNumber, content,
