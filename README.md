@@ -1,5 +1,5 @@
 # Stellaria
-A multi-world plugin for TShock. It forward all packets from some players to `room server`.  
+A multi-world plugin for TShock. It forward all packets from some players to `game server`.  
 Use `/sv [name]` to switch to different world.  
 Permission for using `/sv` is `chireiden.stellaria.use`. 
 
@@ -20,18 +20,33 @@ By default, a config file will be created.
 * "GlobalCommands": These commands will be handled by host server, even if they are forwarded.
 
 #### Sample config
-Server 7777 (Host):
+Server 7777 (Wrapper):
 
     {
       "Host": true,
-      "Key": "aAdgfl52k8OamHRtrWsvbhJMXlcT6dhF9PuLur91mEA=", // Key 1, random generated
-      "Name": "lobby", // Name 1
+      "Key": "kisvK7HS+svZVdlzan4RZ072OdC1gNpIoOy56Uao6ZU=", // Key 1, random generated
+      "Name": "wrapper", // Name 1
       "JoinBytes": "AQtUZXJyYXJpYTE5NA==",
       "Servers": [
         {
           "Address": "127.0.0.1",
+          "Port": 7776,
+          "Name": "wrapper",
+          "Permission": "",
+          "OnEnter": [],
+          "OnLeave": [],
+          "GlobalCommands": [
+            "sv",
+            "who"
+          ],
+          "SpawnX": 1000,
+          "SpawnY": 300,
+          "Key": "kisvK7HS+svZVdlzan4RZ072OdC1gNpIoOy56Uao6ZU="
+        },
+        {
+          "Address": "127.0.0.1",
           "Port": 7777,
-          "Name": "lobby", // One of Name in Servers must be same with Name 1
+          "Name": "lobby",
           "Permission": "",
           "OnEnter": [],
           "OnLeave": [],
@@ -46,7 +61,7 @@ Server 7777 (Host):
         {
           "Address": "127.0.0.1",
           "Port": 7778,
-          "Name": "s2", // Name 2
+          "Name": "game1",
           "Permission": "",
           "OnEnter": [],
           "OnLeave": [],
@@ -56,17 +71,52 @@ Server 7777 (Host):
           ],
           "SpawnX": 1000,
           "SpawnY": 300,
-          "Key": "ADNzptEEsyuuZZxRWPPUawPKi2rJIUU3ahv7n107DuE=" // Key 2
+          "Key": "ADNzptEEsyuuZZxRWPPUawPKi2rJIUU3ahv7n107DuE="
+        },
+        {
+          "Address": "127.0.0.1",
+          "Port": 7779,
+          "Name": "game2",
+          "Permission": "",
+          "OnEnter": [],
+          "OnLeave": [],
+          "GlobalCommands": [
+            "sv",
+            "who"
+          ],
+          "SpawnX": 1000,
+          "SpawnY": 300,
+          "Key": "LJ7zd/hZ3WpaKloWEYRS3dsIl2F99wNNoFkJQ8leKCg="
         }
       ]
     }
 
-Server 7778 (Room):
+Server 7777 (Lobby):
 
     {
       "Host": false,
-      "Key": "ADNzptEEsyuuZZxRWPPUawPKi2rJIUU3ahv7n107DuE=", // Same as key 2 to recieve real IP
-      "Name": "s2", // It should be same as Name 2 but nobody cares
+      "Key": "aAdgfl52k8OamHRtrWsvbhJMXlcT6dhF9PuLur91mEA=",
+      "Name": "lobby",
       "JoinBytes": "AQtUZXJyYXJpYTE5NA==",
-      "Servers": [] // It is not host server, and it won't forward anything.
+      "Servers": []
+    }
+
+Server 7778 (Game Server 1):
+
+    {
+      "Host": false,
+      "Key": "ADNzptEEsyuuZZxRWPPUawPKi2rJIUU3ahv7n107DuE=",
+      "Name": "game1",
+      "JoinBytes": "AQtUZXJyYXJpYTE5NA==",
+      "Servers": []
+    }
+
+Server 7779 (Game Server 2):
+
+    {
+      "Host": false,
+      "Key": "LJ7zd/hZ3WpaKloWEYRS3dsIl2F99wNNoFkJQ8leKCg=",
+      "Name": "game2",
+      "JoinBytes": "AQtUZXJyYXJpYTE5NA==",
+      "Servers": []
     }

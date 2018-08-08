@@ -46,7 +46,19 @@ namespace Chireiden.Stellaria
                         {
                             Address = "127.0.0.1",
                             Port = 7776,
-                            Name = "s1",
+                            Name = "wrapper",
+                            GlobalCommands = new List<string> {"sv", "who"},
+                            Permission = "",
+                            Key = key,
+                            SpawnX = 1000,
+                            SpawnY = 300,
+                            Invisible = true
+                        },
+                        new Server
+                        {
+                            Address = "127.0.0.1",
+                            Port = 7777,
+                            Name = "lobby",
                             GlobalCommands = new List<string> {"sv", "who"},
                             Permission = "",
                             Key = Utils.RandomKey(32),
@@ -56,19 +68,19 @@ namespace Chireiden.Stellaria
                         new Server
                         {
                             Address = "127.0.0.1",
-                            Port = 7777,
-                            Name = "lobby",
+                            Port = 7778,
+                            Name = "game1",
                             GlobalCommands = new List<string> {"sv", "who"},
                             Permission = "",
-                            Key = key,
+                            Key = Utils.RandomKey(32),
                             SpawnX = 1000,
                             SpawnY = 300
                         },
                         new Server
                         {
                             Address = "127.0.0.1",
-                            Port = 7778,
-                            Name = "s2",
+                            Port = 7779,
+                            Name = "game2",
                             GlobalCommands = new List<string> {"sv", "who"},
                             Permission = "",
                             Key = Utils.RandomKey(32),
@@ -167,7 +179,7 @@ namespace Chireiden.Stellaria
                 return;
             }
 
-            var activePlayers = TShock.Players.Where(p => p != null && (p.Active || _forward.ContainsKey(p.Index)));
+            var activePlayers = TShock.Players.Where(p => p != null && (p.Active || _forward.ContainsKey(p.Index))).ToList();
             args.Player.SendSuccessMessage($"Total Online Players ({activePlayers.Count()}/{TShock.Config.MaxSlots})");
             var players = from p in activePlayers
                 group displayIdsRequested
@@ -249,18 +261,18 @@ namespace Chireiden.Stellaria
             }
 
             var name = args.Parameters[0].ToLower();
-            var permittedWorld = _config.Servers.Where(s => args.Player.HasPermission(s.Permission));
+            var permittedWorld = _config.Servers.Where(s => args.Player.HasPermission(s.Permission)).ToList();
             if (name == "list")
             {
                 args.Player.SendInfoMessage(
-                    $"Available world: {string.Join(", ", permittedWorld.Select(s => s.Name))}");
+                    $"Available world: {string.Join(", ", permittedWorld.Where(s => !s.Invisible).Select(s => s.Name))}");
                 return;
             }
 
-            var matchName = permittedWorld.Where(s => s.Name == name);
+            var matchName = permittedWorld.Where(s => s.Name == name).ToList();
             if (!matchName.Any())
             {
-                matchName = permittedWorld.Where(s => s.Name.StartsWith(name));
+                matchName = permittedWorld.Where(s => s.Name.StartsWith(name)).ToList();
                 if (!matchName.Any())
                 {
                     args.Player.SendInfoMessage($"No match: {name}");
@@ -385,7 +397,6 @@ namespace Chireiden.Stellaria
             {
                 try
                 {
-                    var r = _forward[whoAmI].Connection.Client.Receive(_forward[whoAmI].Buffer);
                     if (_forward[whoAmI].Buffer[2] == 7 && !_forward[whoAmI].Init8)
                     {
                         _forward[whoAmI].Connection.Client.Send(new[]
@@ -405,7 +416,8 @@ namespace Chireiden.Stellaria
                             _forward[whoAmI].Server.SpawnY * 16, 1);
                     }
 
-                    Netplay.Clients[whoAmI].Socket.AsyncSend(_forward[whoAmI].Buffer, 0, r, delegate { });
+                    Netplay.Clients[whoAmI].Socket.AsyncSend(_forward[whoAmI].Buffer, 0,
+                        _forward[whoAmI].Connection.Client.Receive(_forward[whoAmI].Buffer), delegate { });
                 }
                 catch
                 {

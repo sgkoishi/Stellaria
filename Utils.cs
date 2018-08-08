@@ -9,15 +9,15 @@ using TShockAPI;
 
 namespace Chireiden.Stellaria
 {
-    public class Utils
+    public static class Utils
     {
         private static readonly MethodInfo _parseParameters =
             typeof(Commands).GetMethod("ParseParameters", BindingFlags.NonPublic | BindingFlags.Static);
 
-        internal static FieldInfo CacheIP =
+        internal static readonly FieldInfo CacheIP =
             typeof(TSPlayer).GetField("CacheIP", BindingFlags.Instance | BindingFlags.NonPublic);
 
-        private static readonly Random rng = new Random();
+        private static readonly Random Rng = new Random();
 
         public static List<string> ParseParameters(string text)
         {
@@ -27,7 +27,7 @@ namespace Chireiden.Stellaria
         public static byte[] RandomKey(int length)
         {
             var ret = new byte[length];
-            rng.NextBytes(ret);
+            Rng.NextBytes(ret);
             return ret;
         }
 
@@ -65,7 +65,7 @@ namespace Chireiden.Stellaria
 
             var cmdName = args[0].ToLower();
             args.RemoveAt(0);
-            var cmds = Commands.ChatCommands.Where(c => c.HasAlias(cmdName));
+            var cmds = Commands.ChatCommands.Where(c => c.HasAlias(cmdName)).ToList();
             if (!cmds.Any())
             {
                 if (player.AwaitingResponse.ContainsKey(cmdName))

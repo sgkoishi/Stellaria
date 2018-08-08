@@ -15,7 +15,7 @@ namespace Chireiden.Stellaria
     public class Server
     {
         private static Server _current;
-        public string Address="";
+        public string Address = "";
         public List<string> GlobalCommands = new List<string>();
         public byte[] Key;
         public string Name="";
@@ -25,6 +25,7 @@ namespace Chireiden.Stellaria
         public ushort Port;
         public int SpawnX;
         public int SpawnY;
+        public bool Invisible;
 
         internal static Server Current
         {
