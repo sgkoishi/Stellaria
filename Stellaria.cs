@@ -183,7 +183,7 @@ namespace Chireiden.Stellaria
             args.Player.SendSuccessMessage($"Total Online Players ({activePlayers.Count()}/{TShock.Config.MaxSlots})");
             var players = from p in activePlayers
                 group displayIdsRequested
-                    ? $"{p.Name} (IX: {p.Index}{(p.Account != null ? ", ID: " + p.Account.ID : "")})"
+                    ? $"{p.Name} (IX: {p.Index}{(p.User != null ? ", ID: " + p.User.ID : "")})"
                     : p.Name by _forward[p.Index].Server;
             var content = new List<string>();
             var hiddenPlayers = 0;
@@ -223,16 +223,16 @@ namespace Chireiden.Stellaria
 
             var player = new TSPlayer(args.Who);
             Utils.CacheIP?.SetValue(player, _forward[args.Who].IP);
-            if (TShock.Utils.GetActivePlayerCount() + 1 > TShock.Config.MaxSlots + TShock.Config.ReservedSlots)
+            if (TShock.Utils.ActivePlayers() + 1 > TShock.Config.MaxSlots + TShock.Config.ReservedSlots)
             {
-                player.Kick(TShock.Config.ServerFullNoReservedReason, true);
+                player.Disconnect(TShock.Config.ServerFullNoReservedReason);
                 args.Handled = true;
                 return;
             }
 
             if (!FileTools.OnWhitelist(player.IP))
             {
-                player.Kick(TShock.Config.WhitelistKickReason, true);
+                player.Disconnect(TShock.Config.WhitelistKickReason);
                 args.Handled = true;
                 return;
             }
@@ -243,7 +243,7 @@ namespace Chireiden.Stellaria
                 player.Country = code == null ? "N/A" : GeoIPCountry.GetCountryNameByCode(code);
                 if (code == "A1" && TShock.Config.KickProxyUsers)
                 {
-                    player.Kick("Proxies are not allowed.", true);
+                    player.Disconnect("Proxies are not allowed.");
                     args.Handled = true;
                     return;
                 }
